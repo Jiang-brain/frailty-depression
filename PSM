@@ -1,0 +1,313 @@
+###################################################################################propensity score matching
+library(MatchIt)
+index=which(datas$frailty==0|datas$frailty==2)
+datas=datas[index,]
+inflammation_biomarker=inflammation_biomarker[index,]
+rm(index)
+index=which(datas$frailty==2)
+datas$frailty[index]=1
+rm(index)
+datas$frailty=factor(datas$frailty)
+row.names(datas)=c(1:nrow(datas))
+#
+m.out1 <- matchit(frailty ~ age+gender+ethnicity+deprivation+income+university_education+
+                    smoking+alcohol+sedentary+metabolic_syndrome, 
+                  method = "nearest",distance = "glm", link = "logit",ratio=1,data = datas)
+match_index=m.out1$match.matrix
+controlled_index=as.numeric(match_index[,1])
+treated_index=as.numeric(row.names(match_index))
+control_data=datas[controlled_index,]
+treat_data=datas[treated_index,]
+control_inflammation=inflammation_biomarker[controlled_index,]
+treat_inflammation=inflammation_biomarker[treated_index,]
+rm(controlled_index,treated_index,m.out1,match_index)
+
+##cox proportional model
+new_data=rbind(control_data,treat_data)
+library("survival")
+library("survminer")
+model <- coxph(Surv(time, status) ~ frailty,data = new_data)
+summary(model)
+rm(model)
+
+
+####mediation using matched data
+library("mediation")
+inflammation_biomarker=rbind(control_inflammation,treat_inflammation)
+datas=rbind(control_data,treat_data)
+result<-data.frame(matrix(nrow=ncol(inflammation_biomarker),ncol=15))
+row.names(result)<-colnames(inflammation_biomarker)
+colnames(result)<-c('a','P_a','se_a','b','P_b','se_b','c','P_c','se_c','c1','P_c1','se_c1','a*b','Proportion mediated','Proportion mediated_c')
+for (i in c(1:ncol(inflammation_biomarker))) {
+  #retain complete data
+  new_data=datas
+  new_data$inflammation=inflammation_biomarker[,i]
+  number_na<-rowSums(is.na(new_data))
+  index_nonNA<-which(number_na==0)
+  new_data<-new_data[index_nonNA,]
+  rm(number_na,index_nonNA)
+  #
+  new_data$inflammation=scale(new_data$inflammation)[,1]
+  new_data$frailty=scale(as.numeric(as.character(new_data$frailty)))
+  
+  model_c <- survreg(Surv(time, status) ~ frailty,data = new_data)
+  model_c1 <- survreg(Surv(time, status) ~ frailty+inflammation,data = new_data)
+  model_a<-lm(inflammation~frailty,data = new_data)
+  Coeff_a<-model_a$coefficients['frailty']
+  Coeff_b<-model_c1$coefficients['inflammation']
+  Coeff_c<-model_c$coefficients['frailty']
+  Coeff_c1<-model_c1$coefficients['frailty']
+  result$P_a[i]=signif(summary(model_a)$coefficients['frailty','Pr(>|t|)'],3)
+  result$P_c[i]=signif(summary(model_c)$table['frailty','p'],3)
+  result$P_b[i]=signif(summary(model_c1)$table['inflammation','p'],3)
+  result$P_c1[i]=signif(summary(model_c1)$table['frailty','p'],3)
+  result$se_a[i]=summary(model_a)$coefficients['frailty','Std. Error']
+  result$se_b[i]=summary(model_c1)$table['inflammation','Std. Error']
+  result$se_c[i]=summary(model_c)$table['frailty','Std. Error']
+  result$se_c1[i]=summary(model_c1)$table['frailty','Std. Error']
+  rm(model_c,model_c1,model_a)
+  
+  sd1=sqrt(var(new_data$frailty)*Coeff_c^2+pi^2/3)
+  sd2=sqrt(var(new_data$frailty)*Coeff_c1^2+Coeff_b^2*var(new_data$inflammation)+2*Coeff_c1*Coeff_b*cov(new_data$frailty,new_data$inflammation)+pi^2/3)
+  result$b[i]=round(Coeff_b/sd2,3)
+  result$c[i]=round(Coeff_c/sd1,3)
+  result$c1[i]=round(Coeff_c1/sd2,3)
+  result$a[i]=round(Coeff_a,3)
+  result$`a*b`[i]=result$a[i]*result$b[i]
+  result$se_a[i]=result$se_a[i]
+  result$se_b[i]=result$se_b[i]/sd2
+  result$se_c[i]=result$se_c[i]/sd1
+  result$se_c1[i]=result$se_c1[i]/sd2
+  rm(Coeff_a,Coeff_b,Coeff_c,Coeff_c1,sd1,sd2)
+  
+  result$`Proportion mediated`[i]=signif(result$`a*b`[i]/(result$`a*b`[i]+result$c1[i]),3)*100
+  result$`Proportion mediated_c`[i]=signif(result$`a*b`[i]/result$c[i],3)*100
+  
+  rm(new_data)
+}
+
+####mediation using mediation
+load('/Users/andyjiang/OneDrive/rtjiang/G/working_data/2023-Cox-model/datas/matched_data.RData')
+library(mediation)
+a<-matrix(nrow=9,ncol=20)
+for (i in c(1,2,3,6,9)){
+  
+  new_data=datas
+  new_data$inflammation=inflammation_biomarker[,i]
+  
+  number_na<-rowSums(is.na(new_data))
+  index_nonNA<-which(number_na==0)
+  new_data<-new_data[index_nonNA,]
+  rm(number_na,index_nonNA)
+
+  c <- survreg(Surv(time, status) ~ frailty+inflammation,data = new_data)
+  b<-lm(inflammation~frailty,data = new_data)
+  
+  # bootstrapping test, it's better to use the bootstrapping test, if the treat group was not specificied, the default is '1'
+  contcont <- mediate(b, c, sims=5000,boot=T, treat="frailty", mediator="inflammation",outcome='time')
+
+  a[i,1]=contcont$tau.coef
+  a[i,2]=contcont$tau.ci[1]
+  a[i,3]=contcont$tau.ci[2]
+  a[i,4]=contcont$tau.p
+  a[i,5]=0
+  a[i,6]=contcont$d.avg
+  a[i,7]=contcont$d.avg.ci[1]
+  a[i,8]=contcont$d.avg.ci[2]
+  a[i,9]=contcont$d.avg.p
+  a[i,10]=0
+  a[i,11]=contcont$z.avg
+  a[i,12]=contcont$z.avg.ci[1]
+  a[i,13]=contcont$z.avg.ci[2]
+  a[i,14]=contcont$z.avg.p
+  a[i,15]=0
+  a[i,16]=contcont$n.avg
+  a[i,17]=contcont$n.avg.ci[1]
+  a[i,18]=contcont$n.avg.ci[2]
+  a[i,19]=contcont$n.avg.p
+  a[i,20]=nrow(new_data)
+  rm(b)
+  rm(c)
+  rm(new_data)
+  print(c(i,a[i,16]))
+}
+#write.csv(a,'/Users/andyjiang/OneDrive/rtjiang/G/working_data/2023-Cox-model/datas/mediation_matched_data.csv')
+#plot proportion mediated
+result<-read.csv('/Users/andyjiang/OneDrive/rtjiang/G/working_data/2023-Cox-model/datas/mediation_matched_data.csv',header=T)
+result$pm=100*result$V16
+result$lower=100*result$V17
+result$upper=100*result$V18
+row.names(result)<-c("CRP","Leukocyte","Lymphocyte","Lymphocyte%","Platelet","Monocyte","Monocyte%","Neutrophil","Neutrophil%")
+behavior_order=order(abs(result$pm))
+ggplot(result, aes(x=row.names(result), y=pm)) +
+  geom_pointrange(aes(ymin=lower, ymax=upper))+
+  geom_point(data=result, mapping=aes(x=row.names(result), y=pm,fill=row.names(result)), size=2.6, shape=21,stroke = 0.9)+
+  scale_x_discrete(limits=row.names(result)[behavior_order])+ylim(-1,6)+coord_flip()+
+  theme_classic()
+
+####################inflammation values in matched non-frail and frail group
+inflammation=data.frame(frailty_status=c(rep(0,nrow(control_inflammation)),rep(1,nrow(treat_inflammation))),
+                        rbind(control_inflammation,treat_inflammation))
+
+result=data.frame(matrix(nrow=ncol(inflammation)-1,ncol=6))
+colnames(result)<-c('mean_control','mean_treat','coeff','d','P','se')
+for (i in (1:(ncol(inflammation)-1))) {
+  temp_inflammation=inflammation[,i+1]
+  index_control=which(inflammation$frailty_status==0)
+  index_treat=which(inflammation$frailty_status==1)
+  
+  result$mean_control[i]=mean(temp_inflammation[index_control],na.rm = TRUE)
+  result$mean_treat[i]=mean(temp_inflammation[index_treat],na.rm = TRUE)
+  model <- lm(scale(temp_inflammation)~ scale(inflammation$frailty_status))
+  coeff=summary(model)$coefficients
+  result$coeff[i]=round(coeff[2,1],3)
+  result$se[i]=round(coeff[2,2],4)
+  result$P[i]=signif(coeff[2,4],3)
+  result$d[i]=round(2*result$coeff[i] / sqrt(1 - result$coeff[i]^2),2)
+  rm(model,coeff,temp_inflammation)
+}
+#write.csv(result,'/Users/andyjiang/OneDrive/rtjiang/G/working_data/2023-Cox-model/datas/matched_frailty_inflammation.csv')
+inflammation[,2:10]=scale(inflammation[,2:10])
+result=data.frame(inflammation=c(inflammation$crp,inflammation$leukocyte,inflammation$lymphocyte,inflammation$lymphocyte_percentage,inflammation$platelet,
+                                 inflammation$monocyte,inflammation$monocyte_percentage,inflammation$neutrophill,inflammation$neutrophill_percentage),
+                  frailty_status=factor(c(rep(inflammation$frailty_status,9))),
+                  frailty=c(rep('CRP',nrow(inflammation)),rep('Leukocyte',nrow(inflammation)),rep('Lymphocyte',nrow(inflammation)),rep('Lymphocyte%',nrow(inflammation)),rep('Platelet',nrow(inflammation)),
+                            rep('Monocyte',nrow(inflammation)),rep('Monocyte%',nrow(inflammation)),rep('Neutrophil',nrow(inflammation)),rep('Neutrophil%',nrow(inflammation))))
+ggplot(result, aes(x=frailty, y=inflammation, fill=frailty_status)) +geom_boxplot(alpha=0.7,outlier.size=-1,width=0.70)+
+  scale_x_discrete(limits=c("CRP","Leukocyte","Lymphocyte","Lymphocyte%","Platelet","Monocyte","Monocyte%","Neutrophil","Neutrophil%"))+
+  ylim(-3.5,4)+theme_classic()+
+  theme(axis.text.x = element_text(size = 10, vjust = 0.5, hjust = 0.5, angle = 30))
+  
+
+
+
+#############################################generate demographic information for matched data
+#new_data
+#age in group, inflammation in raw values
+summary_information=data.frame(matrix(ncol = 4, nrow = 38))
+colnames(summary_information)=c('Whole population','Non-frail','Frail','P for difference')
+row.names(summary_information)=c('Total N','Age group','Age<65 years','Age>=65 years','Sex','Females','Males','Race','Ethnic minorities','White','Deprivation','Lower','Middle','Higher',
+                                 'Average total household income','Not answer','Low (<£51999)','Middle (£52000-£100000)','High (>£100000)','Education qualifications','No college','Above Colleage',
+                                 'Smoking','Never','Ever','Alcohol intake frequency','Daily or almost daily','3-4 times a week','1-2 times a week','1-3 times a month','Special occasions only','Never_',
+                                 'Sedentary behavior','0-4 hours/day','>4 hours/day','Metabolic syndrome','No','Yes')
+for (frailty_status in c(10,0,1)) {
+  if (frailty_status==10){
+    index_frailty=c(1:nrow(new_data))#10=whole samples
+    column_index=1
+  }else{
+    index_frailty=which(new_data$frailty==frailty_status)
+    column_index=frailty_status+2
+  }
+  temp_datas=new_data[index_frailty,]
+  rm(index_frailty)
+  #N
+  summary_information[1,column_index]=nrow(temp_datas)
+  #age
+  for (i in c(1:2)) {
+    n_temp=length(which(temp_datas$age==i-1))
+    summary_information[i+2,column_index]=paste(n_temp,' (',round(n_temp/nrow(temp_datas)*100,2),'%)',sep='')
+  }
+  rm(n_temp)
+  #gender
+  for (i in c(1:2)) {
+    n_temp=length(which(temp_datas$gender==i-1))
+    summary_information[i+5,column_index]=paste(n_temp,' (',round(n_temp/nrow(temp_datas)*100,2),'%)',sep='')
+  }
+  rm(n_temp)
+  #ethnicity
+  for (i in c(1:2)) {
+    n_temp=length(which(temp_datas$ethnicity==i-1))
+    summary_information[i+8,column_index]=paste(n_temp,' (',round(n_temp/nrow(temp_datas)*100,2),'%)',sep='')
+  }
+  rm(n_temp)
+  #deprivation
+  for (i in c(1:3)) {
+    n_temp=length(which(temp_datas$deprivation==i-1))
+    summary_information[i+11,column_index]=paste(n_temp,' (',round(n_temp/nrow(temp_datas)*100,2),'%)',sep='')
+  }
+  rm(n_temp)
+  #income
+  for (i in c(1:4)) {
+    n_temp=length(which(temp_datas$income==i-1))
+    summary_information[i+15,column_index]=paste(n_temp,' (',round(n_temp/nrow(temp_datas)*100,2),'%)',sep='')
+  }
+  rm(n_temp)
+  #education
+  for (i in c(1:2)) {
+    n_temp=length(which(temp_datas$university_education==i-1))
+    summary_information[i+20,column_index]=paste(n_temp,' (',round(n_temp/nrow(temp_datas)*100,2),'%)',sep='')
+  }
+  rm(n_temp)
+  #smoking
+  for (i in c(1:2)) {
+    n_temp=length(which(temp_datas$smoking==i-1))
+    summary_information[i+23,column_index]=paste(n_temp,' (',round(n_temp/nrow(temp_datas)*100,2),'%)',sep='')
+  }
+  rm(n_temp)
+  #alcohol
+  for (i in c(1:6)) {
+    n_temp=length(which(temp_datas$alcohol==i))
+    summary_information[i+26,column_index]=paste(n_temp,' (',round(n_temp/nrow(temp_datas)*100,2),'%)',sep='')
+  }
+  rm(n_temp)
+  #sedentary
+  for (i in c(1:2)) {
+    n_temp=length(which(temp_datas$sedentary==i))
+    summary_information[i+33,column_index]=paste(n_temp,' (',round(n_temp/nrow(temp_datas)*100,2),'%)',sep='')
+  }
+  rm(n_temp)
+  #metabolic_syndrome
+  for (i in c(1:2)) {
+    n_temp=length(which(temp_datas$metabolic_syndrome==i-1))
+    summary_information[i+36,column_index]=paste(n_temp,' (',round(n_temp/nrow(temp_datas)*100,2),'%)',sep='')
+  }
+  rm(n_temp,i)
+  #CRP
+  #summary_information[29,column_index]=paste(round(mean(temp_datas$inflammation),2),' (',round(sd(temp_datas$inflammation),2),')',sep='')#inflammation is numeric
+  rm(temp_datas)
+}
+#P-value
+{#age
+a<-t(matrix(c(tabulate(treat_data$age),tabulate(control_data$age)),nrow=2,ncol=2))
+summary_information[2,4]=signif(chisq.test(a)$p.value,3)
+#gender
+a<-t(matrix(c(tabulate(treat_data$gender),tabulate(control_data$gender)),nrow=2,ncol=2))
+summary_information[5,4]=signif(chisq.test(a)$p.value,3)
+#ethnicity
+a<-t(matrix(c(tabulate(treat_data$ethnicity),tabulate(control_data$ethnicity)),nrow=2,ncol=2))
+summary_information[8,4]=signif(chisq.test(a)$p.value,3)
+#education
+a<-t(matrix(c(tabulate(treat_data$university_education),tabulate(control_data$university_education)),nrow=2,ncol=2))
+summary_information[20,4]=signif(chisq.test(a)$p.value,3)
+#deprivation
+a<-t(matrix(c(tabulate(treat_data$deprivation),tabulate(control_data$deprivation)),nrow=3,ncol=2))
+summary_information[11,4]=signif(chisq.test(a)$p.value,3)
+#income
+a<-t(matrix(c(tabulate(treat_data$income),tabulate(control_data$income)),nrow=4,ncol=2))
+summary_information[15,4]=signif(chisq.test(a)$p.value,3)
+#sedentary
+a<-t(matrix(c(tabulate(treat_data$sedentary),tabulate(control_data$sedentary)),nrow=2,ncol=2))
+summary_information[33,4]=signif(chisq.test(a)$p.value,3)
+#smoking
+a<-t(matrix(c(tabulate(treat_data$smoking),tabulate(control_data$smoking)),nrow=2,ncol=2))
+summary_information[23,4]=signif(chisq.test(a)$p.value,3)
+#alcohol
+a<-t(matrix(c(tabulate(treat_data$alcohol),tabulate(control_data$alcohol)),nrow=6,ncol=2))
+summary_information[26,4]=signif(chisq.test(a)$p.value,3)
+#metabolic_syndrome
+a<-t(matrix(c(tabulate(treat_data$metabolic_syndrome),tabulate(control_data$metabolic_syndrome)),nrow=2,ncol=2))
+summary_information[36,4]=signif(chisq.test(a)$p.value,3)
+}
+#write.csv(summary_information,'/Users/andyjiang/OneDrive/rtjiang/G/working_data/2023-Cox-model/datas/demographics_matched_data.csv')
+
+#######################################################calculate duplicate rows
+temp_data=datas[,4:8]
+temp_data$aaa=paste(temp_data$weight_loss,temp_data$tiredness,temp_data$weakness,temp_data$activity,temp_data$walking_speed,sep='')
+unique_frailty_indicator=unique(temp_data$aaa)
+result=data.frame(matrix(nrow=length(unique_frailty_indicator),ncol=2))
+colnames(result)=c('frailty_indicator','length')
+for (i in c(1:length(unique_frailty_indicator))) {
+  result$frailty_indicator[i]=unique_frailty_indicator[i]
+  result$length[i]=length(which(temp_data$aaa==unique_frailty_indicator[i]))
+}
+rm(i,temp_data,unique_frailty_indicator)
