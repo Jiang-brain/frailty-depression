@@ -1,0 +1,62 @@
+#########################################MR analysis##########################################################
+library(data.table)
+library(TwoSampleMR)
+exposure=fread("/Users/andyjiang/OneDrive/rtjiang/G/working_data/2023-Cox-model/Frailty_GWAS_maf0.01_info0.9_hwe1e-6_FUMA.tsv",header=T)
+exposure=subset(exposure,P<5e-8)
+write.csv(exposure,'/Library/Frameworks/R.framework/Versions/4.2/Resources/library/TwoSampleMR/exposure.csv')
+exposure<-system.file('exposure.csv',package = "TwoSampleMR")
+exposure_exp_dat<-read_exposure_data(filename=exposure,sep=",",snp_col = "SNP",beta_col = "BETA",
+                                     se_col = "SE",
+                                     effect_allele_col = "A1",
+                                     other_allele_col = "A2",
+                                     eaf_col = "A1FREQ",
+                                     pval_col = "P")
+exposure_dat_clumped<-clump_data(exposure_exp_dat,clump_kb = 10000,clump_r2 = 0.001,clump_p1 = 1,clump_p2 = 1,pop="EUR")
+rm(exposure,exposure_exp_dat)
+
+outcome<-fread('/Users/andyjiang/OneDrive/rtjiang/G/working_data/2023-Pain/MR/daner_pgc_mdd_meta_w2_no23andMe_rmUKBB.gz',header=T)
+c<-merge(exposure_dat_clumped,outcome,by.x = "SNP",by.y = "SNP")
+c$OR=log(c$OR)
+write.csv(c,'/Library/Frameworks/R.framework/Versions/4.2/Resources/library/TwoSampleMR/outcome.csv')
+rm(c)
+outcome<-system.file('outcome.csv',package = "TwoSampleMR")
+outcome_dat<-read_outcome_data(snps=exposure_dat_clumped$SNP,
+                               filename=outcome,sep=",",snp_col = "SNP",beta_col = "OR",
+                               se_col = "SE",
+                               effect_allele_col = "A1",
+                               other_allele_col = "A2",
+                               pval_col = "P")
+dat<-harmonise_data(exposure_dat =  exposure_dat_clumped, outcome_dat=outcome_dat)
+result=mr(dat)
+or=generate_odds_ratios(result)
+pleitropy<-mr_pleiotropy_test(dat)
+hetegeneity<-mr_heterogeneity(dat)
+#run_mr_presso(dat,NbDistribution = 5000)
+mr_leaveoneout_plot(leaveoneout_results = mr_leaveoneout(dat))
+
+results=data.frame(method=c("MR Egger","Weighted median","Inverse variance weighted","Simple mode","Weighted mode"),
+                  Pval=signif(result$pval,3),or=round(or$or,3),lower=round(or$or_lci95,3), upper=round(or$or_uci95,3),
+                  ci=paste(round(or$or,3),'(',round(or$or_lci95,3),'-',round(or$or_uci95,3),')',sep=''),pleitropy=round(pleitropy$pval,3))
+
+mr_scatter_plot(result,dat )
+
+
+#####plot mr results
+library(forestplot)
+library(dplyr)
+library(ggthemes)
+result_HR <- tibble(HR  = results$or, frailty = results$method,p_value=as.character(results$Pval),ci=results$ci,
+                    lower = results$lower,upper = results$upper,pleitropy=as.character(results$pleitropy))
+#rm(result)
+header <- tibble(frailty='frailty',p_value='P value',ci='HR (95% CI)')
+combined_data <- bind_rows(header,result_HR)
+rm(header,result_HR)
+combined_data %>% 
+  forestplot(labeltext = c(frailty, ci, p_value),
+             mean=HR,
+             graph.pos =3,boxsize=0.35,zero=1,
+             is.summary = FALSE,clip = c(1,7), xlog = FALSE,graphwidth = unit(.30,"npc"),
+             col = fpColors(box = "#3c5a66",line = "black",summary = "grey"),
+             mar=unit(rep(1.0, times = 4), "cm"),
+             txt_gp=fpTxtGp(label=gpar(cex=0.8), ticks=gpar(cex=0.6), xlab=gpar(cex = 0.8), title=gpar(cex = 0.8)),
+             xlab = "HR (95% CI)",lwd.xaxis = 1.0)
