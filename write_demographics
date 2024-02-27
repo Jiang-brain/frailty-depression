@@ -1,0 +1,110 @@
+#############################################generate demographic information, age in years not in group
+#age in years, inflammation in raw values
+summary_information=data.frame(matrix(ncol = 4, nrow = 37))
+colnames(summary_information)=c('Whole population','Non-frail','Pre-frail','Frail')
+row.names(summary_information)=c('Total N','Age at baseline, years (mean, std)','Sex','Females','Males','Race','Ethnic minorities','White','Deprivation','Lower','Middle','Higher',
+                                 'Income','Unknown','Low (<£51999)','Middle (£52000-£100000)','High (>£100000)','Education','Less than college','Above College qualifications',
+                                 'Smoking','Never','Ever','Alcohol intake frequency','Daily or almost daily','3-4 times a week','1-2 times a week','1-3 times a month','Special occasions only','Alcohol_Never',
+                                 'Sedentary behavior','0-4 hours/day','>4 hours/day','Metabolic syndrome','No','Yes','CRP')
+for (frailty_status in c(10,0,1,2)) {
+  if (frailty_status==10){
+    index_frailty=c(1:nrow(datas))#10=whole samples
+    column_index=1
+  }else{
+    index_frailty=which(datas$frailty==frailty_status)
+    column_index=frailty_status+2
+  }
+  temp_datas=datas[index_frailty,]
+  rm(index_frailty)
+  #N
+  summary_information[1,column_index]=nrow(temp_datas)
+  #age
+  summary_information[2,column_index]=paste(round(mean(temp_datas$age),2),' (',round(sd(temp_datas$age),2),')',sep='')#age is numeric
+  #gender
+  for (i in c(1:2)) {
+    n_temp=length(which(temp_datas$gender==i-1))
+    summary_information[i+3,column_index]=paste(n_temp,' (',round(n_temp/nrow(temp_datas)*100,2),'%)',sep='')
+  }
+  rm(n_temp)
+  #ethnicity
+  for (i in c(1:2)) {
+    n_temp=length(which(temp_datas$ethnicity==i-1))
+    summary_information[i+6,column_index]=paste(n_temp,' (',round(n_temp/nrow(temp_datas)*100,2),'%)',sep='')
+  }
+  rm(n_temp)
+  #deprivation
+  for (i in c(1:3)) {
+    n_temp=length(which(temp_datas$deprivation==i-1))
+    summary_information[i+9,column_index]=paste(n_temp,' (',round(n_temp/nrow(temp_datas)*100,2),'%)',sep='')
+  }
+  rm(n_temp)
+  #income
+  for (i in c(1:4)) {
+    n_temp=length(which(temp_datas$income==i-1))
+    summary_information[i+13,column_index]=paste(n_temp,' (',round(n_temp/nrow(temp_datas)*100,2),'%)',sep='')
+  }
+  rm(n_temp)
+  #education
+  for (i in c(1:2)) {
+    n_temp=length(which(temp_datas$university_education==i-1))
+    summary_information[i+18,column_index]=paste(n_temp,' (',round(n_temp/nrow(temp_datas)*100,2),'%)',sep='')
+  }
+  rm(n_temp)
+  #smoking
+  for (i in c(1:2)) {
+    n_temp=length(which(temp_datas$smoking==i-1))
+    summary_information[i+21,column_index]=paste(n_temp,' (',round(n_temp/nrow(temp_datas)*100,2),'%)',sep='')
+  }
+  rm(n_temp)
+  #alcohol
+  for (i in c(1:6)) {
+    n_temp=length(which(temp_datas$alcohol==i))
+    summary_information[i+24,column_index]=paste(n_temp,' (',round(n_temp/nrow(temp_datas)*100,2),'%)',sep='')
+  }
+  rm(n_temp)
+  #sedentary
+  for (i in c(1:2)) {
+    n_temp=length(which(temp_datas$sedentary==i))
+    summary_information[i+31,column_index]=paste(n_temp,' (',round(n_temp/nrow(temp_datas)*100,2),'%)',sep='')
+  }
+  rm(n_temp)
+  #metabolic_syndrome
+  for (i in c(1:2)) {
+    n_temp=length(which(temp_datas$metabolic_syndrome==i-1))
+    summary_information[i+34,column_index]=paste(n_temp,' (',round(n_temp/nrow(temp_datas)*100,2),'%)',sep='')
+  }
+  rm(n_temp,i)
+  #CRP
+  summary_information[37,column_index]=paste(round(mean(temp_datas$inflammation),2),' (',round(sd(temp_datas$inflammation),2),')',sep='')#inflammation is numeric
+  rm(temp_datas)
+}
+#write.csv(summary_information,'/Users/andyjiang/OneDrive/rtjiang/G/working_data/2023-Cox-model/datas/demographics.csv')
+
+######################################## forestplot for HR
+library(forestplot)
+library(dplyr)
+library(ggthemes)
+#result=result[1:3,]#non-frail, pre-frail, frail
+result=result[1:6,]#0,1,2,3,4,5
+result[1,4]=1
+#result[1,4]=0
+#result[1,5]=1
+result$HR=as.numeric(result$HR)
+result$lower=as.numeric(result$lower)
+result$upper=as.numeric(result$upper)
+result_HR <- tibble(HR  = result$HR, frailty = row.names(result),p_value=as.character(result$p_value),
+                    N=as.character(result$N),cases=as.character(result$cases),ci=result$CI,
+                    lower = result$lower,upper = result$upper)
+#rm(result)
+header <- tibble(frailty='frailty',p_value='P value',N='N',cases='cases',ci='HR (95% CI)')
+combined_data <- bind_rows(header,result_HR)
+rm(header,result_HR)
+combined_data %>% 
+  forestplot(labeltext = c(frailty, N, cases, ci, p_value),
+           mean=HR,
+           graph.pos =5,boxsize=0.45,zero=1,
+           is.summary = FALSE,clip = c(0.6, 6.2), xlog = FALSE,graphwidth = unit(.35,"npc"),
+           col = fpColors(box = "#3c5a66",line = "black",summary = "grey"),
+           mar=unit(rep(1.0, times = 2), "cm"),ticks_at = c(1,2,3,4,5,6),
+           txt_gp=fpTxtGp(label=gpar(cex=0.8), ticks=gpar(cex=0.6), xlab=gpar(cex = 0.8), title=gpar(cex = 0.8)),
+           xlab = "HR (95% CI)",lwd.xaxis = 1.0)
