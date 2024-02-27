@@ -1,0 +1,30 @@
+########################################mutual adjustment of frailty indicators
+result=data.frame(matrix(ncol = 5, nrow = 5))
+row.names(result)=c('Weight loss','Exhaustion','Weakness','Physical inactivity','Slow walking speed')
+colnames(result)=c('Model1','Model1_P_value','Model2','Model2_P_value','PAF')
+#individual component
+components=datas[,c(4:8)]
+for (component in c(seq(1:5))) {
+  datas$frailty_indicator<-factor(components[,component])
+  model1 <- coxph(Surv(time, status) ~ frailty_indicator+
+                    age+gender+ethnicity+deprivation+income+university_education+
+                    smoking+alcohol+sedentary+metabolic_syndrome,data = datas)
+  coeff<-summary(model1)
+  hr=coeff$coefficients['frailty_indicator1','exp(coef)']
+  result$Model1[component]=paste(round(hr,2),' (',round(coeff$conf.int['frailty_indicator1','lower .95'],2),'-',round(coeff$conf.int['frailty_indicator1','upper .95'],2),')',sep='')
+  result$Model1_P_value[component]=signif(coeff$coefficients['frailty_indicator1','Pr(>|z|)'],2)
+  result$PAF[component]=round(length(which(datas$frailty_indicator==1&datas$status==1))/length(which(datas$status==1))*(hr-1)/hr,4)*100
+  rm(hr,model1,coeff)
+}
+rm(components,component)
+#mutual adjustment
+model2 <- coxph(Surv(time, status) ~ weight_loss+tiredness+weakness+activity+walking_speed+
+                   age+gender+ethnicity+deprivation+income+university_education+
+                   smoking+alcohol+sedentary+metabolic_syndrome,data = datas)
+coeff<-summary(model2)
+for (i in c(seq(1:5))) {
+  result$Model2[i]=paste(round(coeff$coefficients[i,'exp(coef)'],2),' (',round(coeff$conf.int[i,'lower .95'],2),'-',round(coeff$conf.int[i,'upper .95'],2),')',sep='')
+  result$Model2_P_value[i]=signif(coeff$coefficients[i,'Pr(>|z|)'],2)
+}
+rm(coeff,model2,i)
+#write.csv(result,'/Users/andyjiang/OneDrive/rtjiang/G/working_data/2023-Cox-model/datas/HR_component.csv')
