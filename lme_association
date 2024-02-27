@@ -1,0 +1,95 @@
+###############################################linear mix-effect model for frailty-inflammation association
+library(lmerTest)
+result_inflammation=data.frame(matrix(nrow=ncol(inflammation_biomarker),ncol=4))
+row.names(result_inflammation)=colnames(inflammation_biomarker)
+colnames(result_inflammation)=c('coeff','se','T_values','P_value')
+for (i in 1:ncol(inflammation_biomarker)) {
+  datas$inflammation=inflammation_biomarker[,i]
+  model <- lmer(scale(inflammation)~ scale(frailty)+age+gender+ethnicity+deprivation+income+university_education+smoking+alcohol+sedentary+metabolic_syndrome
+                 +(1|sites),data=datas)
+  coeff<-summary(model)$coefficients
+  result_inflammation$coeff[i]=round(coeff[2,1],2)
+  result_inflammation$se[i]=coeff[2,2]
+  result_inflammation$T_values[i]=round(coeff['scale(frailty)','t value'],2)
+  result_inflammation$P_value[i]=signif(coeff[2,5],3)
+  rm(model,coeff)
+}
+rm(i)
+#result_inflammation$P_value=signif(p.adjust(result_inflammation$P_value,method='bonferroni',n=nrow(result_inflammation)),3)
+result_inflammation$d = round(2*result_inflammation$coeff / sqrt(1 - result_inflammation$coeff^2),2)
+result_inflammation$sese = (2*result_inflammation$se / sqrt(1 - result_inflammation$se^2))
+
+#plot cohen's d
+ggplot(result_inflammation, aes(x=row.names(result_inflammation), y=d)) +
+  geom_pointrange(aes(ymin=d-1.96*sese, ymax=d+1.96*sese))+
+  geom_point(data=result_inflammation, mapping=aes(x=row.names(result_inflammation), y=d,fill=row.names(result_inflammation)), size=2.6, shape=21,stroke = 0.9)+
+  scale_fill_manual(values=mycolors5(9))+
+  theme_classic()
+#write.csv(result_inflammation,'/Users/andyjiang/OneDrive/rtjiang/G/working_data/2023-Cox-model/datas/frailty_inflammation.csv')
+
+#################get 95% for random intercept
+model <- lmer(scale(inflammation)~ scale(frailty)+age+gender+ethnicity+deprivation+income+university_education+smoking+alcohol+sedentary+metabolic_syndrome
+              +(1|sites),data=datas)
+library(parameters)
+random_intercept=ranef(model)$sites
+se=standard_error(model, effects = "random")$sites
+result=data.frame(sites=row.names(random_intercept),intercept=random_intercept$`(Intercept)`,sese=se[,1])
+result1<-result[order(result$intercept),]
+result1$sites <- factor(result1$sites, levels=c(row.names(result1)))
+ggplot(result1, aes(x=sites, y=intercept)) +
+  geom_pointrange(aes(ymin=intercept-1.96*sese, ymax=intercept+1.96*sese))+
+  geom_point(data=result1, mapping=aes(x=sites, y=intercept,fill=sites), size=2.6, shape=21,stroke = 0.9)+
+  scale_fill_hue()+
+  theme_classic()+coord_flip()
+rm(result,result1,se,random_intercept,model)
+#other default setting for scale_fill_
+#################get 95% for random slope
+model <- lmer(scale(inflammation)~ scale(frailty)+age+gender+ethnicity+deprivation+income+university_education+smoking+alcohol+sedentary+metabolic_syndrome
+              +(1+scale(frailty)|sites),data=datas)
+random_slope=ranef(model)$sites
+se=standard_error(model, effects = "random")$sites
+fixed_slope=summary(model)$coefficients['scale(frailty)','Estimate']
+result=data.frame(sites=row.names(random_slope),slope=fixed_slope+random_slope$`scale(frailty)`,sese=se[,'scale(frailty)'])
+result1<-result[order(result$slope),]
+result1$sites <- factor(result1$sites, levels=c(row.names(result1)))
+ggplot(result1, aes(x=sites, y=slope)) +
+  geom_pointrange(aes(ymin=slope-1.96*sese, ymax=slope+1.96*sese))+
+  geom_point(data=result1, mapping=aes(x=sites, y=slope,fill=sites), size=2.6, shape=21,stroke = 0.9)+
+  scale_fill_hue()+
+  theme_classic()+coord_flip()
+rm(se,fixed_slope,random_slope)
+
+
+###############################################plot linear mixed-effect model
+library(lmerTest)## this package can help get the p-values,  the results were identical to those from matlab
+#to get the 95% CI, coeff+1.96*se
+model <- lmer( inflammation~ frailty+age+gender+ethnicity+deprivation+income+university_education+smoking+alcohol+sedentary+metabolic_syndrome+
+                 (1|sites),data=datas)
+random_intercept<-ranef(model)$sites
+random_intercept$sites=as.numeric(row.names(random_intercept))
+unique_site=unique(datas$sites)
+result<-data.frame(frailty=datas$frailty,fixed_effect=NA,random_effect=NA,slope=NA,sites=datas$sites)
+for (temp_site in 1:length(unique_site)) {
+  index_1=which(result$sites==unique_site[temp_site])
+  index_2=which(random_intercept$sites==unique_site[temp_site])
+  #result$random_effect[index_1]=random_intercept$frailty[index_2]*result$frailty[index_1]#random slope
+  result$random_effect[index_1]=random_intercept$`(Intercept)`[index_2]#random intercept
+  #result$random_effect[index_1]=random_intercept$frailty[index_2]*result$frailty[index_1]+random_intercept$`(Intercept)`[index_2]#random intercept and random slope
+  #result$slope[index_1]=random_intercept$frailty[index_2]
+}
+rm(temp_site,unique_site,index_1,index_2)
+coeff<-summary(model)$coefficients
+result$fixed_effect=coeff[1,1]+coeff[2,1]*result$frailty
+result$fitted=result$fixed_effect+result$random_effect
+rm(coeff)
+
+result<-unique(result)
+library(RColorBrewer)
+mycolors2=colorRampPalette(c('darkred','yellow'))
+mycolors3 <- colorRampPalette(c("darkgreen","yellow"))
+mycolors4 <- colorRampPalette(c('#4A708B',"lightblue"))
+mycolors5 <- colorRampPalette(c('darkgreen',"darkseagreen2"))
+result %>% 
+  ggplot(aes(x=frailty, y=(fitted), color=sites)) + theme_classic() +
+  geom_line(size=0.95,alpha=0.65)+geom_point()+scale_colour_manual(values=mycolors4(21))
+
