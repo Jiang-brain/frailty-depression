@@ -1,0 +1,199 @@
+###############################nonlinear association
+library(survival)
+library(rms)
+library(dplyr)
+library(Gmisc)
+library(splines)
+library(Greg)
+library(tidyverse)
+
+{res.cox <- coxph(Surv(time, status) ~ pspline(frailty,df=2,nterm=4,degree=3)+age+gender+ethnicity+deprivation+income+
+                   university_education+smoking+alcohol+sedentary+metabolic_syndrome, x=TRUE, y=TRUE, data = datas)
+summary(res.cox)
+plotHR(res.cox, term="frailty", xlab="frailty",se=TRUE,
+       polygon_ci=TRUE,
+       col.term = "#0070b9",
+       col.se = "#DEEBF7BB",
+       lwd.term=1.5,
+       lty.term = 1,
+       ylog=FALSE,
+       alpha=0.05,#alpha level, 95%
+       cex=1,
+       axes = TRUE,
+       plot.bty="l", xlim=c(0,7),ylim=c(0,6),rug="density")
+
+anova(res.cox)
+}
+
+######## plot nonlinear association for two groups
+datas0 <- subset(datas, age == 0)
+datas1 <- subset(datas, age == 1)
+fit_0 <- coxph(Surv(time, status) ~ pspline(frailty,df=2,nterm=5,degree=1)+age+gender+ethnicity+deprivation+income+university_education+
+                 smoking+alcohol+sedentary+metabolic_syndrome,data = datas0)
+fit_1 <- coxph(Surv(time, status) ~ pspline(frailty,df=2,nterm=5,degree=1)+age+gender+ethnicity+deprivation+income+university_education+
+                 smoking+alcohol+sedentary+metabolic_syndrome,data = datas1)
+
+plotHR(list(fit_0, fit_1),term="frailty", xlab="frailty",se=TRUE,
+       polygon_ci=TRUE,
+       col.term = c(rgb(red=243,green=178,blue=69,max=255), 'darkseagreen'),
+       col.se = c(rgb(red=254,green=246,blue=232,max=255), rgb(red=236,green=245,blue=231,max=255)),
+       lwd.term=c(1.5, 1.5),
+       lty.term = c(1, 1),
+       ylog=FALSE,
+       alpha=0.05,#alpha level, 95%
+       cex=1,
+       axes = TRUE,
+       plot.bty="l", xlim=c(0,6),ylim=c(0,6),rug="density")
+
+#plot linear and non-linear models together
+plotHR(list(linear_model,nonlinear_model),term="frailty", xlab="frailty",se=TRUE,
+       polygon_ci=TRUE,
+       col.term = c("#0070b9", 'darkseagreen'),
+       col.se = c("#DEEBF7BB", rgb(red=236,green=245,blue=231,max=255)),
+       lwd.term=c(1.5, 1.5),
+       lty.term = c(1, 1),
+       ylog=FALSE,
+       alpha=0.05,#alpha level, 95%
+       cex=1,
+       axes = TRUE,
+       plot.bty="l", xlim=c(0,6),ylim=c(0,6),rug="density")
+
+############################################### rcs nonlinear
+dd <- datadist(datas) #为后续程序设定数据环境
+options(datadist='dd') #为后续程序设定数据环境
+
+fit<- cph(Surv(time, status) ~ rcs(frailty) +age+gender+ethnicity+deprivation+income+university_education+
+            smoking+alcohol+sedentary+metabolic_syndrome, data=datas)
+anova(fit)#test the significance of nolinear regression
+#dd$limits$frailty[2] <- 2 #这里是设置参考点，也就是HR为1的点，常见的为中位数或者临床有意义的点 
+#fit=update(fit)
+plotHR(fit, term="frailty", xlab="frailty",se=TRUE,
+       polygon_ci=TRUE,
+       col.term = "#0070b9",
+       col.se = "#DEEBF7BB",
+       lwd.term=2,
+       lty.term = 1,
+       ylog=FALSE,
+       alpha=0.05,#alpha level, 95%
+       cex=1,
+       axes = TRUE,
+       plot.bty="l", xlim=c(0,7),ylim=c(0.5,7),rug="density")
+
+##plot HR
+library(ggsci)
+Pre0 <-rms::Predict(fit,frailty,fun=exp,type="predictions",ref.zero=TRUE,conf.int = 0.95,digits=2)
+ggplot()+
+  geom_line(data=Pre0, aes(frailty,yhat),alpha=0.7)+
+  scale_color_nejm()+ ##采用ggsci包中英格兰调色，也可以其他
+  geom_ribbon(data=Pre0,aes(frailty, ymin=lower,ymax=upper,fill=gender),alpha=0.1)+
+  scale_fill_nejm()+geom_hline(yintercept=1,linetype=2,size=0.75)
+
+Pre1 <- rms::Predict(fit, frailty, gender=c('1','0'),fun=exp,type="predictions",ref.zero=TRUE,conf.int = 0.95,digits=2)
+par(mfrow=c(1,2))
+ggplot(Pre1)
+
+
+################################rcs and linear model for inflammation
+result=data.frame(matrix(nrow=ncol(inflammation_biomarker),ncol=13))
+row.names(result)=colnames(inflammation_biomarker)
+colnames(result)=c('P_overall','P for nonlinear','P for linear','HR','lower','upper','CI','HR_1','P_1','CI_1','HR_2','P_2','CI_2')
+
+for (index_inflammation in c(1:ncol(inflammation_biomarker))) {
+  ##retain complete data
+  new_data=datas
+  new_data$inflammation=inflammation_biomarker[,index_inflammation]
+  number_na<-rowSums(is.na(new_data))
+  index_nonNA<-which(number_na==0)
+  new_data<-new_data[index_nonNA,]
+  rm(number_na,index_nonNA)
+  
+  b=quantile(new_data$inflammation,seq(0,1,0.0005))
+  new_data$quantiled_inflammation=new_data$inflammation
+  for (i in c(1:length(b)-1)) {
+    index=which(new_data$inflammation>b[i]&new_data$inflammation<=b[i+1])
+    new_data$quantiled_inflammation[index]=b[i]
+  }
+  rm(i,index,b)
+  
+  dd <- datadist(new_data) #为后续程序设定数据环境
+  options(datadist='dd') #为后续程序设定数据环境
+  fit<- cph(Surv(time, status) ~ rcs(quantiled_inflammation,4) +age+gender+ethnicity+deprivation+income+university_education+
+              smoking+alcohol+sedentary+metabolic_syndrome, data=new_data)
+  result$`P for nonlinear`[index_inflammation]<-anova(fit)[2,3]
+  result$P_overall[index_inflammation]<-anova(fit)[1,3]
+  p<-plotHR(fit, term="quantiled_inflammation", xlab="inflammation",se=TRUE,
+         polygon_ci=TRUE,
+         col.term = "#0070b9",
+         col.se = "#DEEBF7BB",
+         lwd.term=2,
+         lty.term = 1,
+         ylog=FALSE,
+         alpha=0.05,#alpha level, 95%
+         cex=1,
+         axes = TRUE,
+         plot.bty="l", xlim=c(min(new_data$quantiled_inflammation),max(new_data$quantiled_inflammation)),ylim=c(0.5,2),rug="density")
+  plot(p)
+  rm(fit,p)
+  fit_linear<- coxph(Surv(time, status) ~ scale(inflammation) +age+gender+ethnicity+deprivation+income+university_education+
+                     smoking+alcohol+sedentary+metabolic_syndrome, data=new_data)
+  coeff<-summary(fit_linear)
+  result$HR[index_inflammation]=round(coeff$coefficients['scale(inflammation)','exp(coef)'],2)
+  result$`P for linear`[index_inflammation]=signif(coeff$coefficients['scale(inflammation)','Pr(>|z|)'],3)
+  lower=round(coeff$conf.int['scale(inflammation)','lower .95'],2)
+  upper=round(coeff$conf.int['scale(inflammation)','upper .95'],2)
+  result$lower[index_inflammation]=lower
+  result$upper[index_inflammation]=upper
+  result$CI[index_inflammation]=paste(result$HR[index_inflammation],' (',lower,'-',upper,')',sep='')
+  rm(fit_linear,lower,upper,coeff)
+  
+  ###tertile of inflammation
+  tertile_point=quantile(new_data$inflammation, probs = seq(0, 1, 1/3),na.rm = TRUE)
+  index_low=which(new_data$inflammation<=tertile_point[2])
+  index_middle=which(new_data$inflammation>tertile_point[2]&new_data$inflammation<tertile_point[3])
+  index_high=which(new_data$inflammation>=tertile_point[3])
+  new_data$inflammation[index_low]=0
+  new_data$inflammation[index_middle]=1
+  new_data$inflammation[index_high]=2
+  rm(index_low,index_middle,index_high,tertile_point)
+  new_data$inflammation=factor(new_data$inflammation)
+  fit_linear_tertile<- coxph(Surv(time, status) ~ inflammation +age+gender+ethnicity+deprivation+income+university_education+
+                       smoking+alcohol+sedentary+metabolic_syndrome, data=new_data)
+  coeff<-summary(fit_linear_tertile)
+  result$HR_1[index_inflammation]=round(coeff$coefficients['inflammation1','exp(coef)'],2)
+  result$P_1[index_inflammation]=signif(coeff$coefficients['inflammation1','Pr(>|z|)'],3)
+  lower=round(coeff$conf.int['inflammation1','lower .95'],2)
+  upper=round(coeff$conf.int['inflammation1','upper .95'],2)
+  result$CI_1[index_inflammation]=paste(result$HR_1[index_inflammation],' (',lower,'-',upper,')',sep='')
+  rm(lower,upper)
+  result$HR_2[index_inflammation]=round(coeff$coefficients['inflammation2','exp(coef)'],2)
+  result$P_2[index_inflammation]=signif(coeff$coefficients['inflammation2','Pr(>|z|)'],3)
+  lower=round(coeff$conf.int['inflammation2','lower .95'],2)
+  upper=round(coeff$conf.int['inflammation2','upper .95'],2)
+  result$CI_2[index_inflammation]=paste(result$HR_2[index_inflammation],' (',lower,'-',upper,')',sep='')
+  rm(lower,upper,new_data,fit_linear_tertile)
+}
+#write.csv(result,'/Users/andyjiang/OneDrive/rtjiang/G/working_data/2023-Cox-model/datas/inflammation_incident_depression.csv')
+# plot linear HR
+ggplot(result, aes(x=row.names(result), y=HR)) +
+  geom_pointrange(aes(ymin=lower, ymax=upper))+
+  geom_point(data=result, mapping=aes(x=row.names(result), y=HR,fill=row.names(result)), size=2.6, shape=21,stroke = 0.9)+
+  scale_x_discrete(limits=row.names(result)[behavior_order])+coord_flip()+
+  theme_classic()
+
+
+###pspline
+fit1<- coxph(Surv(time, status) ~ pspline(quantiled_inflammation,df=2,nterm=5,degree=1)+
+             age+gender+ethnicity+deprivation+income+university_education+smoking+alcohol+sedentary,
+             x=TRUE, y=TRUE, data = new_data)
+summary(fit1)
+plotHR(fit1, term="quantiled_inflammation", xlab="inflammation",se=TRUE,
+       polygon_ci=TRUE,
+       col.term = "#08519C",
+       col.se = "#DEEBF7BB",
+       lwd.term=2,
+       lty.term = 1,
+       ylog=FALSE,
+       alpha=0.05,#alpha level, 95%
+       cex=1,
+       axes = TRUE,
+       plot.bty="l", xlim=c(min(new_data$quantiled_inflammation),max(new_data$quantiled_inflammation)),ylim=c(0,2),rug="density")
