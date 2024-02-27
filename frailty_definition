@@ -1,0 +1,111 @@
+######################### definition of physical frailty
+library(data.table)
+datas<-fread("/Users/andyjiang/OneDrive/rtjiang/G/working_data/2023-Cox-model/frailty_nafld.csv",header = T,sep=",")
+datas=data.frame(datas)
+
+#######weight loss
+weight_loss=datas$X2306.0.0
+index_do_not_know<-which(weight_loss==-1|weight_loss==-3)
+weight_loss[index_do_not_know]<-NA
+
+index_yes<-which(weight_loss==3)
+index_no<-which(weight_loss==0|weight_loss==2)
+
+weight_loss[index_yes]=1;
+weight_loss[index_no]=0;
+rm(index_yes,index_no,index_do_not_know)
+
+#########tiredness
+tiredness=datas$X2080.0.0
+index_do_not_know<-which(tiredness==-1|tiredness==-3)
+tiredness[index_do_not_know]<-NA
+
+index_yes<-which(tiredness==3|tiredness==4)
+index_no<-which(tiredness==1|tiredness==2)
+
+tiredness[index_yes]=1;
+tiredness[index_no]=0;
+rm(index_yes,index_no,index_do_not_know)
+
+#########walking speed
+walking_speed=datas$X924.0.0
+index_do_not_know<-which(walking_speed==-7|walking_speed==-3)
+walking_speed[index_do_not_know]<-NA
+
+index_yes<-which(walking_speed==1)
+index_no<-which(walking_speed==2|walking_speed==3)
+
+walking_speed[index_yes]=1;
+walking_speed[index_no]=0;
+rm(index_yes,index_no,index_do_not_know)
+
+###########grip strength
+{
+  strength_left=datas$X46.0.0
+  strength_right=datas$X47.0.0
+  index_outlier<-which(strength_left==0)
+  strength_left[index_outlier]<-NA
+  index_outlier<-which(strength_right==0)
+  strength_right[index_outlier]<-NA
+  strength=rowMeans(cbind(strength_left,strength_right),na.rm = TRUE)
+  rm(strength_left,strength_right,index_outlier)
+  
+  bmi=datas$X21001.0.0
+  gender=datas$X31.0.0
+  weak_strength_1=which(gender==1&bmi<=24&strength<=29)
+  weak_strength_2=which(gender==1&bmi>24&bmi<=28&strength<=30)
+  weak_strength_3=which(gender==1&bmi>28&strength<=32)
+  
+  weak_strength_4=which(gender==0&bmi<=23&strength<=17)
+  weak_strength_5=which(gender==0&bmi>23&bmi<=26&strength<=17.3)
+  weak_strength_6=which(gender==0&bmi>26&bmi<=29&strength<=18)
+  weak_strength_7=which(gender==0&bmi>29&strength<=21)
+  weak_strength=c(weak_strength_1,weak_strength_2,weak_strength_3,weak_strength_4,weak_strength_5,weak_strength_6,weak_strength_7)
+  rm(weak_strength_1,weak_strength_2,weak_strength_3,weak_strength_4,weak_strength_5,weak_strength_6,weak_strength_7,bmi,gender)
+  
+  weakness=rep(0,length(strength))
+  weakness[weak_strength]=1
+  index_non=which(is.na(strength)==TRUE)
+  weakness[index_non]=NA
+  rm(index_non,weak_strength,strength)
+}
+
+
+#######physical activity
+{
+  activity_type=cbind(datas$X6164.0.0,datas$X6164.0.1,datas$X6164.0.2,datas$X6164.0.3,datas$X6164.0.4)
+  for (i in 1:5){
+    index_light=which(activity_type[,i]==4)
+    activity_type[index_light,i]=0
+    
+    index_not_answer=which(activity_type[,i]==-3)
+    activity_type[index_not_answer,i]=NA
+    rm(index_light,index_not_answer)
+  }
+  
+  activity=pmax(activity_type[,1],activity_type[,2],activity_type[,3],activity_type[,4],activity_type[,5],na.rm = TRUE)
+  rm(i,activity_type)
+  
+  
+  light_activity_frequency=datas$X1011.0.0
+  index_none_activity=which(activity==-7)
+  index_light=which(activity==0&light_activity_frequency<=3&light_activity_frequency>0)
+  index_Nan=which(activity==0&light_activity_frequency<0)
+  
+  activity[index_light]=10
+  activity[index_none_activity]=10
+  activity[index_Nan]=NA
+  
+  index_high=which(activity<10)
+  activity[index_high]=0
+  activity[index_none_activity]=1
+  activity[index_light]=1
+  
+  rm(index_none_activity,index_light,index_Nan,index_high,light_activity_frequency)
+}
+
+
+########## physical frailty score
+{
+  physical_frailty=rowSums(cbind(weight_loss, tiredness, walking_speed, weakness, activity))
+}
