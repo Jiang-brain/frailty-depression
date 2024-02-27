@@ -1,0 +1,231 @@
+##################################################################################################
+inflammation_biomarker=data.frame(crp=crp,leukocyte=leukocyte,lymphocyte=lymphocyte,lymphocyte_percentage=lymphocyte_percentage,platelet=platelet,
+                       monocyte=monocyte,monocyte_percentage=monocyte_percentage,neutrophill=neutrophill,neutrophill_percentage=neutrophill_percentage)
+metabolic=data.frame(central_obesity=central_obesity, diabetes=diabetes,hdl_cholesterol=hdl_cholesterol,hypertension=hypertension,whr=whr,triglycerides=triglycerides)
+data=data.frame(status=data_censoring$label,time=data_censoring$censoring,frailty=physical_frailty,
+                weight_loss=weight_loss,tiredness=tiredness,weakness=weakness,activity=activity,walking_speed=walking_speed,
+                inflammation=inflammation_biomarker$crp,
+                metabolic_syndrome=metabolic_syndrome,
+                age=age,gender=gender,sites=sites,ethnicity=ethnicity,
+                university_education=university_education,deprivation=deprivation,income=income,
+                sedentary=sedentary,smoking=smoking,alcohol=alcohol)
+
+rm(age, gender,alcohol,bmi,central_obesity,deprivation,diabetes,ethnicity,hdl_cholesterol,hypertension,income,sleep,sedentary,crp,leukocyte,lymphocyte,
+   lymphocyte_percentage,platelet,monocyte,monocyte_percentage,neutrophill,neutrophill_percentage,physical_frailty,sites,smoking,triglycerides,university_education,whr,
+   data_censoring,metabolic_syndrome,obesity,weight_loss,tiredness,walking_speed,weakness,activity,metabolic)
+
+##################################################################################################
+##################################################################################################
+
+data$ethnicity=factor(data$ethnicity)
+data$university_education=factor(data$university_education)
+data$gender=factor(data$gender)
+data$income=factor(data$income)
+data$alcohol=factor(data$alcohol)
+data$smoking=factor(data$smoking)
+#data$obesity=factor(data$obesity)
+data$deprivation=factor(data$deprivation)
+data$sedentary=factor(data$sedentary)
+data$metabolic_syndrome=factor(data$metabolic_syndrome)
+
+index_robust=which(data$frailty==0)
+index_pre_frail=which(data$frailty==1|data$frailty==2)
+index_frail=which(data$frailty>=3)
+data$frailty[index_robust]=0
+data$frailty[index_pre_frail]=1
+data$frailty[index_frail]=2
+rm(index_robust,index_pre_frail,index_frail)
+
+data$frailty=factor(data$frailty)
+data$frailty = relevel(data$frailty, ref = "0")
+
+## retain complete data
+number_na<-rowSums(is.na(data))
+index_nonNA<-which(number_na==0)
+datas<-data[index_nonNA,]
+inflammation_biomarker<-inflammation_biomarker[index_nonNA,]
+rm(number_na,index_nonNA)
+
+datas$sites=factor(datas$sites)
+
+index_old=which(datas$age>=65)#establish separate models using 60 as cutpoint
+index_young=which(datas$age<65)
+datas$age[index_old]=1
+datas$age[index_young]=0
+datas$age=factor(datas$age)
+rm(index_old,index_young)
+
+
+index_2year_lanmark=which(!(datas$time<365*2&datas$status==1))
+datas=datas[index_2year_lanmark,]
+inflammation_biomarker=inflammation_biomarker[index_2year_lanmark,]
+rm(index_2year_lanmark)
+
+
+###############################cox proportional model
+library("survival")
+library("survminer")
+
+res.cox <- coxph(Surv(time, status) ~ frailty+age+gender+ethnicity+deprivation+income+university_education+
+                   smoking+alcohol+sedentary+metabolic_syndrome,data = datas)
+res.cox
+summary(res.cox)
+test.zph <- cox.zph(res.cox,'rank')
+test.zph
+car::Anova(res.cox,type = 3, test.statistic = "Wald")#also for showing the significance of interaction effect
+
+##############write all results to Supplementary table, 0/1/2
+coeff<-summary(res.cox)
+result=data.frame(HR=round(coeff$coefficients[,2],2),lower=round(coeff$conf.int[,3],2),upper=round(coeff$conf.int[,4],2),p_value=signif(coeff$coefficients[,5],3))
+for (i in 1:nrow(result)){
+  result$CI[i]=paste(result$HR[i],' (',result$lower[i],'-',result$upper[i],')',sep='')
+}
+result<-rbind(c(1, 1, 1, NA, '1.00 (Ref)'),result[1:2,],c(1, 1, 1, NA, '1.00 (Ref)'),result[3,],c(1, 1, 1, NA, '1.00 (Ref)'),result[4,],c(1, 1, 1, NA, '1.00 (Ref)'),result[5,],c(1, 1, 1, NA, '1.00 (Ref)'),
+              result[6:7,],c(1, 1, 1, NA, '1.00 (Ref)'),result[8:10,],c(1, 1, 1, NA, '1.00 (Ref)'),result[11,],c(1, 1, 1, NA, '1.00 (Ref)'),result[12,],c(1, 1, 1, NA, '1.00 (Ref)'),result[13:17,],
+              c(1, 1, 1, NA, '1.00 (Ref)'),result[18,],c(1, 1, 1, NA, '1.00 (Ref)'),result[19,])
+row.names(result)[c(1,4,6,8,10,13,17,19,21,27,29)]=c('frailty0','age0','gender0','ethnicity0','deprivation_High','income_Unknown','university_education0',
+                                                      'smoking0','alcohol1','sedentary1','metabolic_syndrome0')
+result$N=NA
+result$cases=NA
+#frailty
+for (i in 1:3){
+  result$N[i]=length(which(datas$frailty==i-1))
+  result$cases[i]=length(which(datas$frailty==(i-1)&datas$status==1))
+}
+{#age
+result$N[4]=length(which(datas$age==0))
+result$cases[4]=length(which(datas$age==0&datas$status==1))
+result$N[5]=length(which(datas$age==1))
+result$cases[5]=length(which(datas$age==1&datas$status==1))
+#gender
+result$N[6]=length(which(datas$gender==0))
+result$cases[6]=length(which(datas$gender==0&datas$status==1))
+result$N[7]=length(which(datas$gender==1))
+result$cases[7]=length(which(datas$gender==1&datas$status==1))
+#ethnicity
+result$N[8]=length(which(datas$ethnicity==0))
+result$cases[8]=length(which(datas$ethnicity==0&datas$status==1))
+result$N[9]=length(which(datas$ethnicity==1))
+result$cases[9]=length(which(datas$ethnicity==1&datas$status==1))
+#deprivation
+for (i in 10:12){
+  result$N[i]=length(which(datas$deprivation==i-10))
+  result$cases[i]=length(which(datas$deprivation==(i-10)&datas$status==1))
+}
+#income
+for (i in 13:16){
+  result$N[i]=length(which(datas$income==i-13))
+  result$cases[i]=length(which(datas$income==(i-13)&datas$status==1))
+}
+#education
+result$N[17]=length(which(datas$university_education==0))
+result$cases[17]=length(which(datas$university_education==0&datas$status==1))
+result$N[18]=length(which(datas$university_education==1))
+result$cases[18]=length(which(datas$university_education==1&datas$status==1))
+#smoking
+result$N[19]=length(which(datas$smoking==0))
+result$cases[19]=length(which(datas$smoking==0&datas$status==1))
+result$N[20]=length(which(datas$smoking==1))
+result$cases[20]=length(which(datas$smoking==1&datas$status==1))
+#alcohol
+for (i in 21:26){
+  result$N[i]=length(which(datas$alcohol==i-20))
+  result$cases[i]=length(which(datas$alcohol==(i-20)&datas$status==1))
+}
+#sedentary
+result$N[27]=length(which(datas$sedentary==1))
+result$cases[27]=length(which(datas$sedentary==1&datas$status==1))
+result$N[28]=length(which(datas$sedentary==2))
+result$cases[28]=length(which(datas$sedentary==2&datas$status==1))
+#metabolic_syndrome
+result$N[29]=length(which(datas$metabolic_syndrome==0))
+result$cases[29]=length(which(datas$metabolic_syndrome==0&datas$status==1))
+result$N[30]=length(which(datas$metabolic_syndrome==1))
+result$cases[30]=length(which(datas$metabolic_syndrome==1&datas$status==1))
+rm(coeff,i)
+#write.csv(result,'/Users/andyjiang/OneDrive/rtjiang/G/working_data/2023-Cox-model/datas/HR_frailty_status.csv')
+}
+paf_prefrail=round(result$cases[2]/(result$cases[1]+result$cases[2])*(as.numeric(result$HR[2])-1)/as.numeric(result$HR[2]),4)*100
+paf_frail=round(result$cases[3]/(result$cases[1]+result$cases[3])*(as.numeric(result$HR[3])-1)/as.numeric(result$HR[3]),4)*100
+
+## evaluate vif of predictiors
+a=lm(status~frailty+age+gender+ethnicity+deprivation+income+university_education+smoking+alcohol+sedentary+metabolic_syndrome,data = datas)
+vif=car::vif(a)#aGSIF (the last column, named adjusted generalized standard error inflation factor) values above sqrt(2.5) may be of concern
+rm(a)
+#write.csv(vif,'/Users/andyjiang/OneDrive/rtjiang/G/working_data/2023-Cox-model/datas/vif.csv')
+
+
+############################### HR, frailty=0,1,2,3,4,5
+datas$frailty=factor(datas$frailty)
+hr_model <- coxph(Surv(time, status) ~ frailty+age+gender+ethnicity+deprivation+income+university_education+
+                   smoking+alcohol+sedentary+metabolic_syndrome,data = datas)
+#write the full results to table
+coeff<-summary(hr_model)
+result=data.frame(HR=round(coeff$coefficients[,2],2),lower=round(coeff$conf.int[,3],2),upper=round(coeff$conf.int[,4],2),p_value=signif(coeff$coefficients[,5],3))
+for (i in 1:nrow(result)){
+  result$CI[i]=paste(result$HR[i], ' (',result$lower[i],'-',result$upper[i],')',sep ='')
+}
+rm(i, coeff)
+result<-rbind(c(1, 1, 1, NA, '1.00 (Ref)'),result[1:5,],c(1, 1, 1, NA, '1.00 (Ref)'),result[6,],c(1, 1, 1, NA, '1.00 (Ref)'),result[7,],c(1, 1, 1, NA, '1.00 (Ref)'),result[8,],c(1, 1, 1, NA, '1.00 (Ref)'),
+              result[9:10,],c(1, 1, 1, NA, '1.00 (Ref)'),result[11:13,],c(1, 1, 1, NA, '1.00 (Ref)'),result[14,],c(1, 1, 1, NA, '1.00 (Ref)'),result[15,],c(1, 1, 1, NA, '1.00 (Ref)'),result[16:20,],
+              c(1, 1, 1, NA, '1.00 (Ref)'),result[21,],c(1, 1, 1, NA, '1.00 (Ref)'),result[22,])
+row.names(result)[c(1,7,9,11,13,16,20,22,24,30,32)]=c('frailty0','age0','gender0','ethnicity0','deprivation0','income0','university_education0',
+                                                   'smoking0','alcohol1','sedentary1','metabolic_syndrome0')
+result$N=NA
+result$cases=NA
+#frailty
+for (i in 1:6){
+  result$N[i]=length(which(datas$frailty==i-1))
+  result$cases[i]=length(which(datas$frailty==(i-1)&datas$status==1))
+}
+#age
+result$N[7]=length(which(datas$age==0))
+result$cases[7]=length(which(datas$age==0&datas$status==1))
+result$N[8]=length(which(datas$age==1))
+result$cases[8]=length(which(datas$age==1&datas$status==1))
+#gender
+result$N[9]=length(which(datas$gender==0))
+result$cases[9]=length(which(datas$gender==0&datas$status==1))
+result$N[10]=length(which(datas$gender==1))
+result$cases[10]=length(which(datas$gender==1&datas$status==1))
+#ethnicity
+result$N[11]=length(which(datas$ethnicity==0))
+result$cases[11]=length(which(datas$ethnicity==0&datas$status==1))
+result$N[12]=length(which(datas$ethnicity==1))
+result$cases[12]=length(which(datas$ethnicity==1&datas$status==1))
+#deprivation
+for (i in 13:15){
+  result$N[i]=length(which(datas$deprivation==i-13))
+  result$cases[i]=length(which(datas$deprivation==(i-13)&datas$status==1))
+}
+#income
+for (i in 16:19){
+  result$N[i]=length(which(datas$income==i-16))
+  result$cases[i]=length(which(datas$income==(i-16)&datas$status==1))
+}
+#education
+result$N[20]=length(which(datas$university_education==0))
+result$cases[20]=length(which(datas$university_education==0&datas$status==1))
+result$N[21]=length(which(datas$university_education==1))
+result$cases[21]=length(which(datas$university_education==1&datas$status==1))
+#smoking
+result$N[22]=length(which(datas$smoking==0))
+result$cases[22]=length(which(datas$smoking==0&datas$status==1))
+result$N[23]=length(which(datas$smoking==1))
+result$cases[23]=length(which(datas$smoking==1&datas$status==1))
+#alcohol
+for (i in 24:29){
+  result$N[i]=length(which(datas$alcohol==i-23))
+  result$cases[i]=length(which(datas$alcohol==(i-23)&datas$status==1))
+}
+#sedentary
+result$N[30]=length(which(datas$sedentary==1))
+result$cases[30]=length(which(datas$sedentary==1&datas$status==1))
+result$N[31]=length(which(datas$sedentary==2))
+result$cases[31]=length(which(datas$sedentary==2&datas$status==1))
+#metabolic_syndrome
+result$N[32]=length(which(datas$metabolic_syndrome==0))
+result$cases[32]=length(which(datas$metabolic_syndrome==0&datas$status==1))
+result$N[33]=length(which(datas$metabolic_syndrome==1))
+result$cases[33]=length(which(datas$metabolic_syndrome==1&datas$status==1))
+rm(i,hr_model)
