@@ -1,0 +1,131 @@
+###############################evaluate significance of interaction at the whole group
+fit0<- coxph(Surv(time, status) ~ frailty+age+gender+ethnicity+deprivation+income+university_education+smoking+alcohol+sedentary+metabolic_syndrome,data = datas)
+fit1<- coxph(Surv(time, status) ~ frailty*age+gender+ethnicity+deprivation+income+university_education+smoking+alcohol+sedentary+metabolic_syndrome,data = datas)
+fit2<- coxph(Surv(time, status) ~ frailty*gender+age+ethnicity+deprivation+income+university_education+smoking+alcohol+sedentary+metabolic_syndrome,data = datas)
+fit3<- coxph(Surv(time, status) ~ frailty*ethnicity+age+gender+deprivation+income+university_education+smoking+alcohol+sedentary+metabolic_syndrome,data = datas)
+fit4<- coxph(Surv(time, status) ~ frailty*deprivation+ethnicity+age+gender+income+university_education+smoking+alcohol+sedentary+metabolic_syndrome,data = datas)
+fit5<- coxph(Surv(time, status) ~ frailty*income+ethnicity+age+gender+deprivation+university_education+smoking+alcohol+sedentary+metabolic_syndrome,data = datas)
+fit6<- coxph(Surv(time, status) ~ frailty*university_education+income+ethnicity+age+gender+deprivation+smoking+alcohol+sedentary+metabolic_syndrome,data = datas)
+fit7<- coxph(Surv(time, status) ~ frailty*smoking+university_education+income+ethnicity+age+gender+deprivation+alcohol+sedentary+metabolic_syndrome,data = datas)
+fit8<- coxph(Surv(time, status) ~ frailty*alcohol+smoking+university_education+income+ethnicity+age+gender+deprivation+sedentary+metabolic_syndrome,data = datas)
+fit9<- coxph(Surv(time, status) ~ frailty*sedentary+alcohol+smoking+university_education+income+ethnicity+age+gender+deprivation+metabolic_syndrome,data = datas)
+fit10<- coxph(Surv(time, status)~ frailty*metabolic_syndrome+sedentary+alcohol+smoking+university_education+income+ethnicity+age+gender+deprivation,data = datas)
+fit_models=list(fit1,fit2,fit3,fit4,fit5,fit6,fit7,fit8,fit9,fit10)
+rm(fit1,fit2,fit3,fit4,fit5,fit6,fit7,fit8,fit9,fit10)
+P_interaction=data.frame(matrix(ncol = 1, nrow = 10))
+row.names(P_interaction)=c('Age','Sex','Ethnicity','Deprivation','Income','University_education','Smoking','Alcohol','Sedentary','Metabolic_syndrome')
+colnames(P_interaction)=c('P_interaction')
+for (i in c(1:10)) {
+  P_interaction$P_interaction[i]=signif(anova(fit0,fit_models[[i]],test="Chisq")$`Pr(>|Chi|)`[2],3)
+}
+rm(i,fit0,fit_models)
+p.adjust(P_interaction$P_interaction,method='bonferroni',n=nrow(P_interaction))
+#write.csv(P_interaction,'/Users/andyjiang/OneDrive/rtjiang/G/working_data/2023-Cox-model/datas/interaction.csv')
+
+#####################################build separate models, using frailty as a numeric variable, the modifier can be any covariate
+##############age
+datas0 <- subset(datas, frailty==0|frailty==1)
+datas1 <- subset(datas, frailty==0|frailty==2)
+results<-data.frame(id=seq(1:4),HR=NA,P_value=NA,CI=NA,N=NA,events=NA)
+row.names(results)=c('prefrail_age_0','prefrail_age_1','frail_age_0','frail_age_1')
+                    
+# prefrail vs non-frail
+datas0$frailty=as.numeric(as.character(datas0$frailty))
+#fit_0 <- coxph(Surv(time, status) ~ frailty*age+gender+ethnicity+deprivation+income+university_education+smoking+alcohol+sedentary+metabolic_syndrome,data = datas0)
+#hr_reference_prefrail=exp(fit_0$coef['frailty'])
+#hr_treat_prefrail=exp(fit_0$coef['frailty']+fit_0$coef['frailty:age1'])
+fit_no_interaction <- coxph(Surv(time, status) ~ frailty+age+gender+ethnicity+deprivation+income+university_education+
+                 smoking+alcohol+sedentary+metabolic_syndrome,data = datas0)
+fit_interaction <- coxph(Surv(time, status) ~ frailty*age+gender+ethnicity+deprivation+income+university_education+
+               smoking+alcohol+sedentary+metabolic_syndrome,data = datas0)
+results$P_value[1]=signif(anova(fit_no_interaction,fit_interaction,test="Chisq")$`Pr(>|Chi|)`[2],3)
+rm(fit_no_interaction, fit_interaction)
+fit_0 <- coxph(Surv(time, status) ~ frailty:age+age+gender+ethnicity+deprivation+income+university_education+
+                 smoking+alcohol+sedentary+metabolic_syndrome,data = datas0)
+for (i in c(1,2)) {
+  nrow_summary<-nrow(summary(fit_0)$conf.int)
+  results$HR[i]=round((summary(fit_0)$conf.int[nrow_summary-2+i,'exp(coef)']),2)
+  lower=round(summary(fit_0)$conf.int[nrow_summary-2+i,'lower .95'],2)
+  upper=round(summary(fit_0)$conf.int[nrow_summary-2+i,'upper .95'],2)
+  results$CI[i]=paste('(',lower,'-',upper,')',sep ='')
+  results$N[i]=length(which(datas0$age==i-1))
+  results$events[i]=length(which(datas0$age==(i-1)&datas0$status==1))
+  rm(lower,upper,nrow_summary)
+}
+rm(i,fit_0,datas0)
+##frail vs non-frail
+index=which(datas1$frailty==2)
+datas1$frailty[index]=1
+rm(index)
+datas1$frailty=as.numeric(as.character(datas1$frailty))
+fit_no_interaction <- coxph(Surv(time, status) ~ frailty+age+gender+ethnicity+deprivation+income+university_education+
+                              smoking+alcohol+sedentary+metabolic_syndrome,data = datas1)
+fit_interaction <- coxph(Surv(time, status) ~ frailty*age+gender+ethnicity+deprivation+income+university_education+
+                           smoking+alcohol+sedentary+metabolic_syndrome,data = datas1)
+results$P_value[3]=signif(anova(fit_no_interaction,fit_interaction,test="Chisq")$`Pr(>|Chi|)`[2],3)
+rm(fit_no_interaction, fit_interaction)
+fit_0 <- coxph(Surv(time, status) ~ frailty:age+age+gender+ethnicity+deprivation+income+university_education+
+                 smoking+alcohol+sedentary+metabolic_syndrome,data = datas1)
+for (i in c(1,2)) {
+  nrow_summary<-nrow(summary(fit_0)$conf.int)
+  results$HR[i+2]=round((summary(fit_0)$conf.int[nrow_summary-2+i,'exp(coef)']),2)
+  lower=round(summary(fit_0)$conf.int[nrow_summary-2+i,'lower .95'],2)
+  upper=round(summary(fit_0)$conf.int[nrow_summary-2+i,'upper .95'],2)
+  results$CI[i+2]=paste('(',lower,'-',upper,')',sep ='')
+  results$N[i+2]=length(which(datas1$age==i-1))
+  results$events[i+2]=length(which(datas1$age==(i-1)&datas1$status==1))
+  rm(lower,upper,nrow_summary)
+}
+rm(i,fit_0,datas1)
+
+##############sex
+datas0 <- subset(datas, frailty==0|frailty==1)
+datas1 <- subset(datas, frailty==0|frailty==2)
+results<-data.frame(id=seq(1:4),HR=NA,P_value=NA,CI=NA,N=NA,events=NA)
+row.names(results)=c('prefrail_sex_0','prefrail_sex_1','frail_sex_0','frail_sex_1')
+
+# prefrail vs non-frail
+datas0$frailty=as.numeric(as.character(datas0$frailty))
+fit_no_interaction <- coxph(Surv(time, status) ~ frailty+age+gender+ethnicity+deprivation+income+university_education+
+                              smoking+alcohol+sedentary+metabolic_syndrome,data = datas0)
+fit_interaction <- coxph(Surv(time, status) ~ frailty*gender+age+ethnicity+deprivation+income+university_education+
+                           smoking+alcohol+sedentary+metabolic_syndrome,data = datas0)
+results$P_value[1]=signif(anova(fit_no_interaction,fit_interaction,test="Chisq")$`Pr(>|Chi|)`[2],3)
+rm(fit_no_interaction, fit_interaction)
+fit_0 <- coxph(Surv(time, status) ~ frailty:gender+age+gender+ethnicity+deprivation+income+university_education+
+                 smoking+alcohol+sedentary+metabolic_syndrome,data = datas0)
+for (i in c(1,2)) {
+  nrow_summary<-nrow(summary(fit_0)$conf.int)
+  results$HR[i]=round((summary(fit_0)$conf.int[nrow_summary-2+i,'exp(coef)']),2)
+  lower=round(summary(fit_0)$conf.int[nrow_summary-2+i,'lower .95'],2)
+  upper=round(summary(fit_0)$conf.int[nrow_summary-2+i,'upper .95'],2)
+  results$CI[i]=paste('(',lower,'-',upper,')',sep ='')
+  results$N[i]=length(which(datas0$gender==i-1))
+  results$events[i]=length(which(datas0$gender==(i-1)&datas0$status==1))
+  rm(lower,upper,nrow_summary)
+}
+rm(i,fit_0,datas0)
+##frail vs non-frail
+index=which(datas1$frailty==2)
+datas1$frailty[index]=1
+rm(index)
+datas1$frailty=as.numeric(as.character(datas1$frailty))
+fit_no_interaction <- coxph(Surv(time, status) ~ frailty+age+gender+ethnicity+deprivation+income+university_education+
+                              smoking+alcohol+sedentary+metabolic_syndrome,data = datas1)
+fit_interaction <- coxph(Surv(time, status) ~ frailty*gender+age+ethnicity+deprivation+income+university_education+
+                           smoking+alcohol+sedentary+metabolic_syndrome,data = datas1)
+results$P_value[3]=signif(anova(fit_no_interaction,fit_interaction,test="Chisq")$`Pr(>|Chi|)`[2],3)
+rm(fit_no_interaction, fit_interaction)
+fit_0 <- coxph(Surv(time, status) ~ frailty:gender+age+gender+ethnicity+deprivation+income+university_education+
+                 smoking+alcohol+sedentary+metabolic_syndrome,data = datas1)
+for (i in c(1,2)) {
+  nrow_summary<-nrow(summary(fit_0)$conf.int)
+  results$HR[i+2]=round((summary(fit_0)$conf.int[nrow_summary-2+i,'exp(coef)']),2)
+  lower=round(summary(fit_0)$conf.int[nrow_summary-2+i,'lower .95'],2)
+  upper=round(summary(fit_0)$conf.int[nrow_summary-2+i,'upper .95'],2)
+  results$CI[i+2]=paste('(',lower,'-',upper,')',sep ='')
+  results$N[i+2]=length(which(datas1$gender==i-1))
+  results$events[i+2]=length(which(datas1$gender==(i-1)&datas1$status==1))
+  rm(lower,upper,nrow_summary)
+}
+rm(i,fit_0,datas1)
