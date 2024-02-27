@@ -1,0 +1,245 @@
+############################covariate variables
+age=datas$X21003.0.0
+gender=datas$X31.0.0
+sites=datas$X54.0.0
+
+deprivation=datas$X189.0.0
+#deprivation=log(deprivation-min(deprivation,na.rm = TRUE)+1)
+tertile_point=quantile(deprivation, probs = seq(0, 1, 1/3),na.rm = TRUE)
+index_high=which(deprivation<=tertile_point[2])
+index_middle=which(deprivation>tertile_point[2]&deprivation<tertile_point[3])
+index_low=which(deprivation>=tertile_point[3])
+deprivation[index_low]=0
+deprivation[index_middle]=1
+deprivation[index_high]=2
+rm(index_low,index_middle,index_high,tertile_point)
+
+
+whr=datas$X48.0.0/datas$X49.0.0
+bmi=datas$X21001.0.0
+
+ethnicity=datas$X21000.0.0
+index_white=which((ethnicity %in% c(1,1001,1002,1003))==TRUE)
+index_nonwhite=which((ethnicity %in% c(1,1001,1002,1003))==FALSE)
+ethnicity[index_white]=1
+ethnicity[index_nonwhite]=0
+rm(index_white,index_nonwhite)
+
+income=datas$X738.0.0
+index_not_answe=which(income==-3)
+index_non=which(income==-1)
+index_low=which(income<=3&income>=1)
+index_medium=which(income==4)
+index_high=which(income==5)
+income[index_non]=NA
+income[index_low]=1
+income[index_medium]=2
+income[index_high]=3
+income[index_not_answe]=0
+rm(index_non,index_low,index_medium,index_high,index_not_answe)
+
+
+smoking=datas$X20116.0.0
+index_non=which(is.na(smoking)==TRUE)
+smoking[index_non]=NA
+index_no_answer=which(smoking==-3)
+smoking[index_no_answer]=NA
+index_current=which(smoking==2)
+smoking[index_current]=1
+rm(index_non,index_no_answer,index_current)
+
+alcohol=datas$X1558.0.0
+index_no_answer=which(alcohol<0)
+alcohol[index_no_answer]=NA
+# index_light=which(alcohol>=5)
+# index_medium=which(alcohol==4)
+# index_heavy=which(alcohol==2|alcohol==3)
+# index_extreme=which(alcohol==1)
+# alcohol[index_light]=0
+# alcohol[index_medium]=1
+# alcohol[index_heavy]=2
+# alcohol[index_extreme]=3
+# rm(index_no_answer,index_light,index_medium,index_heavy,index_extreme)
+rm(index_no_answer)
+
+
+education=cbind(datas$X6138.0.0,datas$X6138.0.1,datas$X6138.0.2,datas$X6138.0.3,datas$X6138.0.4,datas$X6138.0.5)
+for (i in 1:6){
+  index_no_answer=which(education[,i]==-3)
+  education[index_no_answer,i]=NA
+  index_none=which(education[,i]==-7)
+  education[index_none,i]=7
+  
+  index_20=which(education[,i]==1)
+  index_13=which(education[,i]==2)
+  index_10=which(education[,i]==3|education[,i]==4)
+  index_19=which(education[,i]==5)
+  index_15=which(education[,i]==6)
+  index_7=which(education[,i]==7)
+  education[index_20,i]=20
+  education[index_13,i]=13
+  education[index_10,i]=10
+  education[index_19,i]=19
+  education[index_15,i]=15
+  education[index_7,i]=7
+  rm(index_20,index_13,index_10,index_19,index_15,index_7,index_none,index_no_answer)
+}
+rm(i)
+university_education=pmax(education[,1],education[,2],education[,3],education[,4],education[,5],education[,6],na.rm = TRUE)
+index_university=which(university_education==20)
+index_no_university=which(university_education<20)
+university_education[index_no_university]=0
+university_education[index_university]=1
+rm(index_no_university,index_university,education)
+
+
+#sleep
+sleep=datas$X1160.0.0
+index_no_answer=which(sleep<0)
+index_excess=which(sleep>9)
+index_lack=which(sleep<7)
+index_normal=which(sleep>=7&sleep<=9)
+sleep[index_no_answer]=NA
+sleep[index_normal]=0
+sleep[index_excess]=1
+sleep[index_lack]=2
+rm(index_no_answer,index_normal,index_excess,index_lack)
+
+#watching tv
+sedentary=datas$X1070.0.0
+index_na=which(sedentary==-1|sedentary==-3)
+index_low=which((sedentary<4&sedentary>=0)|sedentary==-10)
+index_high=which(sedentary>=4)
+sedentary[index_na]=NA
+sedentary[index_low]=1
+sedentary[index_high]=2
+rm(index_na,index_low,index_high)
+
+################################## metabolic syndrome
+central_obesity=datas$X48.0.0
+index_female=which(datas$X31.0.0==0&central_obesity>=88)
+index_male=which(datas$X31.0.0==1&central_obesity>=102)
+central_obesity[index_female]=1
+central_obesity[index_male]=1
+index_non_obesity=which((is.na(central_obesity)==FALSE)&central_obesity>10)
+central_obesity[index_non_obesity]=0
+rm(index_female,index_male,index_non_obesity)
+
+diabetes=datas$X2443.0.0
+glucose=datas$X30740.0.0
+index_diabetes=which(diabetes==1|glucose>=5.6)
+index_nan=which(diabetes==-1|diabetes==-3)
+diabetes[index_nan]=NA
+rm(index_nan)
+index_na=which((is.na(diabetes)==TRUE)&(is.na(glucose)==TRUE))
+diabetes=rep(0,nrow(datas))
+diabetes[index_diabetes]=1
+diabetes[index_na]=NA
+rm(glucose,index_diabetes,index_na)
+
+hypertension=rep(0, nrow(datas))
+dbp=rowMeans(cbind(datas$X4079.0.0,datas$X4079.0.1),na.rm = TRUE)
+sbp=rowMeans(cbind(datas$X4080.0.0,datas$X4080.0.1),na.rm = TRUE)
+hypertension_diagnosis=pmax(datas$X6150.0.0,datas$X6150.0.1,datas$X6150.0.2,datas$X6150.0.3,na.rm = TRUE)
+index_hypertension=which(hypertension_diagnosis==4)
+index_high_dbp=which(dbp>=85)
+index_high_sbp=which(sbp>=130)
+hypertension[unique(c(index_hypertension,index_high_dbp,index_high_sbp))]=1
+index_nan=which(hypertension_diagnosis==-3&is.na(dbp)==TRUE&is.na(sbp)==TRUE)
+hypertension[index_nan]=NA
+rm(dbp,sbp,index_high_dbp,index_high_sbp,index_nan,index_hypertension,hypertension_diagnosis)
+
+
+triglycerides=rep(0,nrow(datas))
+index_high_triglycerides=which(datas$X30870.0.0>=1.7)
+index_low_triglycerides=which(datas$X30870.0.0<1.7)
+index_na=which(is.na(datas$X30870.0.0)==TRUE)
+triglycerides[index_high_triglycerides]=1
+triglycerides[index_low_triglycerides]=0
+triglycerides[index_na]=NA
+rm(index_high_triglycerides,index_low_triglycerides,index_na)
+
+hdl_cholesterol=rep(0,nrow(datas))
+index_low_cholesterol_female=which(datas$X30760.0.0<1.3&datas$X31.0.0==0)
+index_low_cholesterol_male=which(datas$X30760.0.0<1.0&datas$X31.0.0==1)
+index_no=which(is.na(datas$X30760.0.0)==TRUE)
+hdl_cholesterol[index_low_cholesterol_female]=1
+hdl_cholesterol[index_low_cholesterol_male]=1
+hdl_cholesterol[index_no]=NA
+rm(index_low_cholesterol_female,index_low_cholesterol_male,index_no)
+
+metabolic_syndrome=rowSums(cbind(central_obesity,hdl_cholesterol,hypertension,triglycerides,diabetes))
+index_met=which(metabolic_syndrome>=3)
+index_no_met=which(metabolic_syndrome<3)
+metabolic_syndrome[index_met]=1
+metabolic_syndrome[index_no_met]=0
+rm(index_no_met,index_met)
+#for some components with missing values
+ metabolic=cbind(central_obesity,hdl_cholesterol,hypertension,triglycerides,diabetes)
+ row_nan=rowSums(is.na(metabolic))
+ index_yes=which(row_nan==1&rowSums(metabolic,na.rm = TRUE)>=3)
+ index_yes1=which(row_nan==2&rowSums(metabolic,na.rm = TRUE)>=3)
+# index_no=which(row_nan==1&rowSums(metabolic,na.rm = TRUE)<2)
+# index_no1=which(row_nan==2&rowSums(metabolic,na.rm = TRUE)==0)
+ metabolic_syndrome[index_yes]=1
+ metabolic_syndrome[index_yes1]=1
+# metabolic_syndrome[index_no]=0
+# metabolic_syndrome[index_no1]=0
+ rm(row_nan,index_yes,index_yes1,metabolic)
+
+
+#obesity
+obesity=rep(NA,nrow(datas))
+index_underweight=which(bmi<18.5)
+index_normal=which(bmi<25&bmi>=18.5)
+index_overweight=which(bmi>=25&bmi<30)
+index_obese1=which(bmi>=30)
+#index_obese2=which(bmi>=35&bmi<40)
+#index_obese3=which(bmi>=40)
+obesity[index_underweight]=0
+obesity[index_normal]=1
+obesity[index_overweight]=2
+obesity[index_obese1]=3
+#obesity[index_obese2]=4
+#obesity[index_obese3]=5
+#rm(index_underweight,index_normal,index_overweight,index_obese1,index_obese2,index_obese3)
+rm(index_underweight,index_normal,index_overweight,index_obese1)
+
+##########inflammation biomarkers
+crp=log(datas$X30710.0.0)#log transformation
+
+leukocyte=datas$X30000.0.0
+index_outlier=which(datas$X30000.0.0==0)
+leukocyte[index_outlier]=NA
+leukocyte=log(leukocyte)
+rm(index_outlier)
+
+lymphocyte=log(datas$X30120.0.0+1)
+lymphocyte_percentage=datas$X30180.0.0
+
+monocyte=datas$X30130.0.0
+index_outlier=which(datas$X30130.0.0>2.5)
+monocyte[index_outlier]=2.5
+monocyte=log(monocyte+1)
+rm(index_outlier)
+
+monocyte_percentage=datas$X30190.0.0 # can also use log transformation
+index_outlier=which(monocyte_percentage>18)
+monocyte_percentage[index_outlier]=18
+rm(index_outlier)
+
+
+neutrophill=datas$X30140.0.0
+index_outlier=which(neutrophill>12)
+neutrophill[index_outlier]=12
+rm(index_outlier)
+
+neutrophill_percentage=datas$X30200.0.0
+
+platelet=datas$X30080.0.0
+index_outlier=which(platelet>600)
+platelet[index_outlier]=600
+rm(index_outlier)
+
+
+rm(datas)
