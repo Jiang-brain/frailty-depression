@@ -1,6 +1,6 @@
 ######################### definition of physical frailty
 library(data.table)
-datas<-fread("/Users/andyjiang/OneDrive/rtjiang/G/working_data/2023-Cox-model/frailty_nafld.csv",header = T,sep=",")
+datas<-fread("/Users/andyjiang/OneDrive/rtjiang/G/working_data/2023-Cox-model/frailty_data.csv",header = T,sep=",")
 datas=data.frame(datas)
 
 #######weight loss
