@@ -1,6 +1,6 @@
 ############ ICD-10 extraction of first diagnosis
 library(data.table)
-first_diagnosis<-fread("/Users/andyjiang/OneDrive/rtjiang/G/working_data/2023-Cox-model/frailty_nafld.csv",select=c('eid','53-0.0',
+first_diagnosis<-fread("/Users/andyjiang/OneDrive/rtjiang/G/working_data/2023-Cox-model/frailty_data.csv",select=c('eid','53-0.0',
                       '130894-0.0','130895-0.0','130896-0.0','130897-0.0','130898-0.0','130899-0.0','130900-0.0','130901-0.0','130902-0.0',
                       '130903-0.0','130904-0.0','130905-0.0','130906-0.0','130907-0.0','130908-0.0','130909-0.0','130910-0.0','130911-0.0',
                       '130912-0.0','130913-0.0','130914-0.0','130915-0.0','130916-0.0','130917-0.0'),
@@ -24,7 +24,7 @@ rm(index_nonNan)
 
 ##### max date of icd record (use to determine the censored date)
 library(data.table)
-icd_10_date<-fread("/Users/andyjiang/OneDrive/rtjiang/G/working_data/2023-Cox-model/frailty_nafld_long.csv", select=c(seq(228,453)),header = T,sep=",")
+icd_10_date<-fread("/Users/andyjiang/OneDrive/rtjiang/G/working_data/2023-Cox-model/frailty_data_long.csv", select=c(seq(228,453)),header = T,sep=",")
 icd_10_date=data.frame(icd_10_date)
 
 for (temp_col in 1:ncol(icd_10_date)){
@@ -43,7 +43,7 @@ rm(result_date,temp_col,icd_10_date)
 
 ######## lost of follow-up
 library(data.table)
-datas<-fread("/Users/andyjiang/OneDrive/rtjiang/G/working_data/2023-Cox-model/frailty_nafld.csv",header = T,sep=",")
+datas<-fread("/Users/andyjiang/OneDrive/rtjiang/G/working_data/2023-Cox-model/frailty_data.csv",header = T,sep=",")
 datas=data.frame(datas)
 lost_follow_up<-data.frame(id=datas$eid,lost_reason=datas$X190.0.0,lost_date=datas$X191.0.0,attending_date=datas$X53.0.0)
 rm(datas)
@@ -55,7 +55,7 @@ rm(index_noNaN)
 
 ################ censoring data, days between the date attending the assessment center and the date recording information
 library(data.table)
-datas<-fread("/Users/andyjiang/OneDrive/rtjiang/G/working_data/2023-Cox-model/frailty_nafld.csv",header = T,sep=",")
+datas<-fread("/Users/andyjiang/OneDrive/rtjiang/G/working_data/2023-Cox-model/frailty_data.csv",header = T,sep=",")
 datas=data.frame(datas)
 data_censoring=data.frame(id=datas$eid,attending_date=datas$X53.0.0)
 data_censoring$censoring=rep(as.IDate(censoring_date),nrow(data_censoring))-data_censoring$attending_date
